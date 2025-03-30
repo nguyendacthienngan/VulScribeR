@@ -16,10 +16,19 @@ public class Dataset {
         return dataset1;
     }
 
-    public void addPair(String id, String header, String full) {
-        int bodyIndex = full.indexOf("{");
-        addPair(id, new CodeSnippet(id ,header, full.substring(bodyIndex).trim()));
+    public void addPair(String id, String header, String code) {
+        // Check if the header contains '{'. If not, use the whole header.
+        int index = header.indexOf('{');
+        String safeHeader = (index != -1) ? header.substring(0, index) : header;
+        CodeSnippet snippet = new CodeSnippet(id, safeHeader, code);
+        addPair(id, snippet);
     }
+
+    
+    // public void addPair(String id, String header, String full) {
+    //     int bodyIndex = full.indexOf("{");
+    //     addPair(id, new CodeSnippet(id ,header, full.substring(bodyIndex).trim()));
+    // }
 
     public void addPair(String id, CodeSnippet snippet) {
         // snippet.addMetaData(INDEX_STRING, id);
