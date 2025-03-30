@@ -1,189 +1,224 @@
 package com.anon.rag.utils;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.file.DirectoryIteratorException;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
 
 import com.anon.rag.model.Dataset;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.opencsv.CSVReaderHeaderAware;
 
 public class DatasetUtils {
 
     private DatasetUtils() {
     }
 
-    public static Dataset readCleanDevign() {
-        return readCleanDevign("../container_data/train_devign/");
-    }
-
-    public static List<String> listFiles(String directoryPath) {
-        Path dir = Paths.get(directoryPath).toAbsolutePath();
-        LinkedList<String> files = new LinkedList<>();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
-            for (Path path : stream) {
-                if (Files.isRegularFile(path)) {
-                    files.add(path.getFileName().toString());
-                }
-            }
-        } catch (IOException | DirectoryIteratorException e) {
-            System.err.println("Error listing files: " + e.getMessage());
-        }
-        return files;
-    }
-
-    public static Dataset readCleanDevign(String path) {
-        Dataset dataset = new Dataset();
-        List<String> files = listFiles(path);
-        List<String> invalidFiles = new ArrayList<>();
-        for (String file : files) {
-            if (file.endsWith("0.c")) {
-                String code = readFile(path + file);
-                String header = extractMethodHeader(code);
-                if (header == null) {
-                    // System.out.println(file + "| "+ code + "header>>" + header);
-                    invalidFiles.add(file);
-                    continue;
-                }
-                dataset.addPair(file, header, code);
-            }
-        }
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter("invalid_devign.txt"))) {
-            for (String line : invalidFiles) {
-                writer.write(line);
-                writer.newLine();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        // System.out.println(dataset.getDataset().get(files.get(2)));
-        return dataset;
-    }
-
-    @Deprecated
-    public static Dataset readCleanBigvulCsv(String path) throws Exception {
-        Dataset dataset = new Dataset();
-
-        try (CSVReaderHeaderAware csvReader = new CSVReaderHeaderAware(new FileReader(path))) {
-            Map<String, String> row;
-            while ((row = csvReader.readMap()) != null) {
-                String target = row.get("target");
-                if (target != null && target.trim().equals("0")) {
-                    String index = row.get("index");
-                    String clean = row.get("processed_func");
-                    dataset.addPair(index, extractMethodHeader(clean), clean);
-                }
-            }
-        } catch (IOException e) {
-            System.err.println("Error reading CSV file: " + e.getMessage());
-        }
-        return dataset;
-    }
-
-    public static Dataset readFormattedVulsBigVul(String path) throws Exception {
+    /**
+     * Đọc file JSON chứa các bản ghi "clean" (is_vul == false) của MegaVul.
+     * Các trường được sử dụng:
+     * - file_path: dùng làm key định danh duy nhất.
+     * - func: chứa function code sau khi đã fix (clean).
+     * @param path Đường dẫn đến file JSON.
+     * @return Dataset chứa các cặp (file_path, header, func) được trích xuất.
+     * @throws Exception Nếu có lỗi khi đọc file.
+     */
+    public static Dataset readCleanMegaVul(String path) throws Exception {
         Dataset dataset = new Dataset();
         ObjectMapper objectMapper = new ObjectMapper();
 
+        // Read entire file content into a String
+        StringBuilder sb = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new FileReader(path))) {
             String line;
             while ((line = br.readLine()) != null) {
-                JsonNode jsonNode = objectMapper.readTree(line);
-                JsonNode target = jsonNode.get("target");
-                if (target != null && target.asInt() == 1) {
-                    JsonNode index = jsonNode.get("index");
-                    JsonNode vul = jsonNode.get("processed_func");
-                    JsonNode flaw_lines = jsonNode.get("flaw_line");
-                    if (index != null && vul != null && flaw_lines != null && flaw_lines.asText().trim().length() >= 5) {
-                        String header = extractMethodHeader(vul.asText());
-                        // if (header == null) {
-                        //     System.out.println(index.asText() + "| "+ fixedVul.asText() + "header>>" + header);
-                        // }
+                sb.append(line);
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        }
+        String fileContent = sb.toString();
 
-                        dataset.addPair(index.asText(), header, vul.asText());
+        // Parse the entire content as a JSON array
+        JsonNode root = objectMapper.readTree(fileContent);
+        if (root.isArray()) {
+            for (JsonNode jsonNode : root) {
+                JsonNode isVul = jsonNode.get("is_vul");
+
+                // Debug: in ra giá trị của is_vul
+                // System.out.println("Record is_vul: " + isVul);
+
+                boolean isVulFlag = false;
+                if (isVul != null) {
+                    if (isVul.isBoolean()) {
+                        isVulFlag = isVul.asBoolean();
+                    } else {
+                        isVulFlag = "true".equalsIgnoreCase(isVul.asText());
+                    }
+                }
+
+                // Clean record: is_vul == false
+                if (!isVulFlag) {
+                    JsonNode filePath = jsonNode.get("file_path");
+                    JsonNode func = jsonNode.get("func");
+                    if (filePath != null && func != null) {
+                        String funcText = func.asText();
+                        String header = extractMethodHeader(funcText);
+                        String codeWithoutHeader = "";
+                        if (funcText.length() > header.length()) {
+                            codeWithoutHeader = funcText.substring(header.length()).trim();
+                        } else {
+                            // Nếu toàn bộ chuỗi bằng header hoặc ngắn hơn, ta có thể gán chuỗi rỗng hoặc giữ nguyên
+                            codeWithoutHeader = funcText;
+                        }
+                        dataset.addPair(filePath.asText(), header, codeWithoutHeader);
+                    }
+                }
+            }
+        }
+        return dataset;
+    }
+
+    /**
+     * Đọc file JSON chứa các bản ghi vulnerable (is_vul == true) của MegaVul.
+     * Các trường được sử dụng:
+     * - file_path: dùng làm key định danh duy nhất.
+     * - func_before: chứa function code vulnerable (trước khi fix).
+     * - diff_line_info: chứa thông tin diff (để xác nhận record có đủ dữ liệu diff).
+     * @param path Đường dẫn đến file JSON.
+     * @return Dataset chứa các cặp (file_path, header, func_before) được trích xuất.
+     * @throws Exception Nếu có lỗi khi đọc file.
+     */
+    public static Dataset readFormattedVulsMegaVul(String path) throws Exception {
+        Dataset dataset = new Dataset();
+        ObjectMapper objectMapper = new ObjectMapper();
+    
+        int totalRecords = 0;
+        int validRecords = 0;
+        try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                totalRecords++;
+                // Mỗi dòng là 1 JSON object
+                JsonNode jsonNode = objectMapper.readTree(line);
+                JsonNode isVul = jsonNode.get("is_vul");
+                if (isVul != null) {
+                    boolean isVulFlag = false;
+                    if (isVul.isBoolean()) {
+                        isVulFlag = isVul.asBoolean();
+                    } else {
+                        isVulFlag = "true".equalsIgnoreCase(isVul.asText());
+                    }
+                    if (isVulFlag) {
+
+                        JsonNode filePath = jsonNode.get("file_path");
+                        JsonNode funcBefore = jsonNode.get("func_before");
+                        JsonNode diffLineInfo = jsonNode.get("diff_line_info");
+                        // System.out.println(line);
+                        // System.out.println(jsonNode.toPrettyString());
+                        // System.out.println(diffLineInfo.toString().trim().length()>= 5);
+                        if (filePath != null && funcBefore != null 
+                                && diffLineInfo != null 
+                                && diffLineInfo.toString().trim().length() >= 5) {
+                            String header = DatasetUtils.extractMethodHeader(funcBefore.asText());
+                            dataset.addPair(filePath.asText(), header, funcBefore.asText());
+                            validRecords++;
+                        } else {
+                            // System.out.println("[DEBUG] Record skipped: file_path=" + filePath 
+                            //     + ", func_before=" + funcBefore 
+                            //     + ", diff_line_info=" + diffLineInfo);
+                        }
                     }
                 }
             }
         } catch (IOException e) {
-            System.err.println("Error reading CSV file: " + e.getMessage());
+            System.err.println("Error reading file: " + e.getMessage());
         }
+        System.out.println("[DEBUG] Total records in file: " + totalRecords);
+        System.out.println("[DEBUG] Valid records added: " + validRecords);
         return dataset;
     }
+    
+    // public static Dataset readFormattedVulsMegaVul(String path) throws Exception {
+    //     Dataset dataset = new Dataset();
+    //     ObjectMapper objectMapper = new ObjectMapper();
 
-    public static Dataset readCleanBigvul(String path) throws Exception {
-        Dataset dataset = new Dataset();
-        ObjectMapper objectMapper = new ObjectMapper();
+    //     // Read entire file content into a String
+    //     StringBuilder sb = new StringBuilder();
+    //     int totalRecords = 0;
+    //     int validRecords = 0;
+    //     try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+    //         String line;
+    //         while ((line = br.readLine()) != null) {
+    //             sb.append(line);
+    //         }
+    //     } catch (IOException e) {
+    //         System.err.println("Error reading file: " + e.getMessage());
+    //     }
+    //     String fileContent = sb.toString();
 
-        try (BufferedReader br = new BufferedReader(new FileReader(path))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                JsonNode jsonNode = objectMapper.readTree(line);
-                JsonNode target = jsonNode.get("target");
-                if (target != null && target.asInt() == 0) {
-                    JsonNode index = jsonNode.get("index");
-                    JsonNode clean = jsonNode.get("processed_func");
-                    if (index != null && clean != null) {
-                        dataset.addPair(index.asText(), extractMethodHeader(clean.asText()), clean.asText());
-                    }
-                }
-            }
-        } catch (IOException e) {
-            System.err.println("Error reading CSV file: " + e.getMessage());
-        }
-        return dataset;
-    }
+    //     // Parse the entire content as a JSON array
+    //     JsonNode root = objectMapper.readTree(fileContent);
+    //     if (root.isArray()) {
+    //         for (JsonNode jsonNode : root) {
+    //             totalRecords++;
 
-    @Deprecated
-    public static Dataset readFixedVulBigVulCsv(String path) throws Exception {
-        Dataset dataset = new Dataset();
+    //             JsonNode isVul = jsonNode.get("is_vul");
+    //             if (isVul != null) {
+    //                 boolean isVulFlag = false;
+    //                 if (isVul.isBoolean()) {
+    //                     isVulFlag = isVul.asBoolean();
+    //                 } else {
+    //                     isVulFlag = "true".equalsIgnoreCase(isVul.asText());
+    //                 }
 
-        try (CSVReaderHeaderAware csvReader = new CSVReaderHeaderAware(new FileReader(path))) {
-            Map<String, String> row;
-            while ((row = csvReader.readMap()) != null) {
-                String target = row.get("target");
-                if (target != null && target.trim().equals("1")) {
-                    String index = row.get("index");
-                    String fixedVul = row.get("func_after");
-                    dataset.addPair(index, extractMethodHeader(fixedVul), fixedVul);
-                }
-            }
-        } catch (IOException e) {
-            System.err.println("Error reading CSV file: " + e.getMessage());
-        }
-        return dataset;
-    }
+    //                 // Vulnerable record: is_vul == true
+    //                 if (isVulFlag) {
+    //                     JsonNode filePath = jsonNode.get("file_path");
+    //                     JsonNode funcBefore = jsonNode.get("func_before");
+    //                     JsonNode diffLineInfo = jsonNode.get("diff_line_info");
+    //                     // Kiểm tra diff_line_info
+    //                     if (filePath != null && funcBefore != null 
+    //                             && diffLineInfo != null 
+    //                             && diffLineInfo.toString().trim().length() >= 5) {
+    //                         String funcBeforeText = funcBefore.asText();
 
-    public static Dataset readCleanBigvul() throws Exception {
-        return readCleanBigvul("../container_data/bigvul-train.jsonl");
-    }
+    //                         String header = extractMethodHeader(funcBeforeText);
+    //                         String codeWithoutHeader = "";
+                            
+    //                         if (funcBeforeText.length() > header.length()) {
+    //                             codeWithoutHeader = funcBeforeText.substring(header.length()).trim();
+    //                         } else {
+    //                             // Nếu toàn bộ chuỗi bằng header hoặc ngắn hơn, ta có thể gán chuỗi rỗng hoặc giữ nguyên
+    //                             codeWithoutHeader = funcBeforeText;
+    //                         }
+    //                         dataset.addPair(filePath.asText(), header, codeWithoutHeader);
+    //                         validRecords++;
+    //                     } else {
+    //                         System.out.println("[DEBUG] Record skipped: file_path=" + filePath 
+    //                             + ", func_before=" + funcBefore 
+    //                             + ", diff_line_info=" + diffLineInfo);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     System.out.println("[DEBUG] Total records in file: " + totalRecords);
+    //     System.out.println("[DEBUG] Valid records added: " + validRecords);
+    //     return dataset;
+    // }
 
-    public static Dataset readFormattedVulsBigVul() throws Exception {
-        return readFormattedVulsBigVul("../container_data/bigvul-train.jsonl");
-    }
-
-    public static Dataset readAllClean() throws Exception {
-        Dataset devign = readCleanDevign();
-        Dataset bigvul = readCleanBigvul();
-        return Dataset.merge(devign, bigvul);
-    }
-
+    /**
+     * Trích xuất phần header của phương thức từ nội dung code.
+     * Header được định nghĩa là phần văn bản trước dấu '{'.
+     * @param fileContent Nội dung code của function.
+     * @return Header của function, hoặc null nếu không tìm thấy.
+     */
     public static String extractMethodHeader(String fileContent) {
         int braceIndex = fileContent.indexOf('{');
         if (braceIndex != -1) {
-            // Extract everything before the first '{'
+            // Lấy phần trước dấu '{'
             String header = fileContent.substring(0, braceIndex);
-            // Optionally, remove any trailing whitespace or newlines
+            // Loại bỏ khoảng trắng thừa và định dạng lại header
             header = header
                     .replaceAll("\\s+$", "")
                     .replaceAll("\n", " ")
@@ -193,24 +228,9 @@ public class DatasetUtils {
                     .replaceAll("\\s+&", "& ")
                     .replaceAll("\\s+\\*", "* ")
                     .trim();
-
             return header;
         }
-        return null;
+        // Nếu không tìm thấy dấu '{', trả về toàn bộ nội dung hoặc chuỗi rỗng
+        return fileContent;
     }
-
-    public static String readFile(String filePath) {
-        StringBuilder content = new StringBuilder();
-        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                content.append(line).append("\n");
-            }
-        } catch (IOException e) {
-            System.err.println("Error reading file: " + e.getMessage());
-            return null;
-        }
-        return content.toString();
-    }
-
 }
