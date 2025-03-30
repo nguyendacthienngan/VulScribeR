@@ -48,7 +48,9 @@ public class LuceneCodeSearchFacade {
     }
 
     public LuceneCodeSearchFacade index(Collection<CodeSnippet> codeSnippets) throws IOException {
+        System.out.println("[DEBUG] Starting indexing " + codeSnippets.size() + " documents...");
         indexer.index(codeSnippets);
+        System.out.println("[DEBUG] Finished indexing.");
         return this;
     }
 
