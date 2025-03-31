@@ -1,4 +1,4 @@
-import openai
+# import openai
 import re
 import concurrent.futures
 import threading
@@ -122,21 +122,21 @@ class CodeQwenPrompter:
     def __init__(self, system_message="You are a helpful assistant.", lock=None) -> None:
         self.messages = None
         self.system_message = system_message
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-Omni-7B")
+        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/CodeQwen1.5-7B-Chat")
         self.lock = lock
         self.prompt = self._prompt
         if lock != None:
             self.selector = 0
             self.prompt=self._multi_model_prompt
-            self.model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-Omni-7B", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"},cache_dir="./model_cache/")
-            self.model2 = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-Omni-7B", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3:"8GB"} ,cache_dir="./model_cache/")
-            # self.model3 = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-Omni-7B", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"} ,cache_dir="./model_cache/")
-            # self.model4 = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-Omni-7B", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"} ,cache_dir="./model_cache/")
+            self.model = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"},cache_dir="./model_cache/")
+            self.model2 = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3:"8GB"} ,cache_dir="./model_cache/")
+            # self.model3 = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"} ,cache_dir="./model_cache/")
+            # self.model4 = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"} ,cache_dir="./model_cache/")
             # self.models = {0:self.model, 1:self.model2, 2: self.model3, 3:self.model4}
             self.models = {0:self.model, 1:self.model2}
 
         else:
-            self.model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-Omni-7B", torch_dtype="auto", device_map="balanced", cache_dir="./model_cache/" , max_memory={0: "15GB", 1: "15GB"})
+            self.model = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", cache_dir="./model_cache/" , max_memory={0: "15GB", 1: "15GB"})
 
     def _multi_model_prompt(self, message, clean=True, show=False):
         model = None
@@ -214,35 +214,35 @@ class CodeQwenPrompter:
 
         return reply
 
-class ChatGPTPrompter:
-    def __init__(self, api_key, system_message="Hi ChatGPT, You are a helpful assistant!") -> None:
-        openai.api_key = api_key
-        self.messages = None
-        self.system_message = system_message
+# class ChatGPTPrompter:
+    # def __init__(self, api_key, system_message="Hi ChatGPT, You are a helpful assistant!") -> None:
+    #     openai.api_key = api_key
+    #     self.messages = None
+    #     self.system_message = system_message
 
-    # clean initially, it is always dirty after use
-    def prompt(self, message, clean=True, show=False, t=0.5):
-        # print(t)
-        if self.messages == None or clean:
-            self.messages = [
-                # system message to set the behavior of the assistant
-                {"role": "system", "content": self.system_message},
-            ]
-            chat_completion = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo", messages=self.messages, temperature=t)
-            reply = chat_completion["choices"][0]["message"]["content"]
-            self.messages.append({"role": "assistant", "content": reply})
+    # # clean initially, it is always dirty after use
+    # def prompt(self, message, clean=True, show=False, t=0.5):
+    #     # print(t)
+    #     if self.messages == None or clean:
+    #         self.messages = [
+    #             # system message to set the behavior of the assistant
+    #             {"role": "system", "content": self.system_message},
+    #         ]
+    #         chat_completion = openai.ChatCompletion.create(
+    #             model="gpt-3.5-turbo", messages=self.messages, temperature=t)
+    #         reply = chat_completion["choices"][0]["message"]["content"]
+    #         self.messages.append({"role": "assistant", "content": reply})
 
-        self.messages.append({"role": "user", "content": message})
-        chat_completion = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo", messages=self.messages)
-        reply = chat_completion["choices"][0]["message"]["content"]
-        self.messages.append({"role": "assistant", "content": reply})
+    #     self.messages.append({"role": "user", "content": message})
+    #     chat_completion = openai.ChatCompletion.create(
+    #         model="gpt-3.5-turbo", messages=self.messages)
+    #     reply = chat_completion["choices"][0]["message"]["content"]
+    #     self.messages.append({"role": "assistant", "content": reply})
 
-        if show:
-            print(reply)
+    #     if show:
+    #         print(reply)
 
-        return reply
+    #     return reply
 
 
 class PromptUtils:
@@ -366,22 +366,22 @@ class ConcurrencyUtils:
 
             print("Success!")
 
-        except (openai.error.APIError, torch.cuda.OutOfMemoryError) as e:
-            print(f"ex happend {e}")
-            # print(f"Arguments: {e.args}")
-            print(f"Exception class: {e.__class__}")
-            print(f"Cause: {e.__cause__}")
-            print(f"Context: {e.__context__}")
-            print(f"API Error - retry at {retry}")
-            time.sleep(retry + 1) # maybe the server wasn't available so wait
-            ConcurrencyUtils.concurrent_chatgpt_call(prompt_creator_from_searchItem,
-                                                     index_retreiver,
-                                                     vul_retriever,
-                                                     clean_retriever,
-                                                     vul_lines_retriever,
-                                                     search_item,
-                                                     indices, vuls, cleans, vul_lines, generated,
-                                                     lock, llm, retry=retry - 1)
+        # except (openai.error.APIError, torch.cuda.OutOfMemoryError) as e:
+        #     print(f"ex happend {e}")
+        #     # print(f"Arguments: {e.args}")
+        #     print(f"Exception class: {e.__class__}")
+        #     print(f"Cause: {e.__cause__}")
+        #     print(f"Context: {e.__context__}")
+        #     print(f"API Error - retry at {retry}")
+        #     time.sleep(retry + 1) # maybe the server wasn't available so wait
+        #     ConcurrencyUtils.concurrent_chatgpt_call(prompt_creator_from_searchItem,
+        #                                              index_retreiver,
+        #                                              vul_retriever,
+        #                                              clean_retriever,
+        #                                              vul_lines_retriever,
+        #                                              search_item,
+        #                                              indices, vuls, cleans, vul_lines, generated,
+        #                                              lock, llm, retry=retry - 1)
         except Exception as e:
             print(f"ex happend {e}")
             # print(f"Arguments: {e.args}")
