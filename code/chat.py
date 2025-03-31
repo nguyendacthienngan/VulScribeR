@@ -8,8 +8,8 @@ from typing import List, Callable
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
-device = "cuda" # the device to load the model onto
-
+device = "cuda:0" if torch.cuda.is_available() else "cpu"  # Explicitly select GPU 0
+CODEQWEN_ARCHITECTURE = "Qwen/CodeQwen1.5-7B"
 
 place_holders = {1: "$MY_UNIQUE_PLACE_HOLDER_1", 2: "$MY_UNIQUE_PLACE_HOLDER_2",
                  3: "$MY_UNIQUE_PLACE_HOLDER_3", 4: "$MY_UNIQUE_PLACE_HOLDER_4", 5: "$MY_UNIQUE_PLACE_HOLDER_5"}
@@ -122,21 +122,23 @@ class CodeQwenPrompter:
     def __init__(self, system_message="You are a helpful assistant.", lock=None) -> None:
         self.messages = None
         self.system_message = system_message
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/CodeQwen1.5-7B-Chat")
+        self.tokenizer = AutoTokenizer.from_pretrained(CODEQWEN_ARCHITECTURE)
         self.lock = lock
         self.prompt = self._prompt
         if lock != None:
             self.selector = 0
             self.prompt=self._multi_model_prompt
-            self.model = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"},cache_dir="./model_cache/")
-            self.model2 = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3:"8GB"} ,cache_dir="./model_cache/")
-            # self.model3 = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"} ,cache_dir="./model_cache/")
-            # self.model4 = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"} ,cache_dir="./model_cache/")
+            self.model = AutoModelForCausalLM.from_pretrained(CODEQWEN_ARCHITECTURE, torch_dtype="auto", device_map="cuda:0"  # Forces only GPU 0
+                                                              , max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"},cache_dir="./model_cache/")
+            self.model2 = AutoModelForCausalLM.from_pretrained(CODEQWEN_ARCHITECTURE, torch_dtype="auto", device_map="cuda:0"  # Forces only GPU 0
+                                                               , max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3:"8GB"} ,cache_dir="./model_cache/")
+            # self.model3 = AutoModelForCausalLM.from_pretrained(CODEQWEN_ARCHITECTURE, torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"} ,cache_dir="./model_cache/")
+            # self.model4 = AutoModelForCausalLM.from_pretrained(CODEQWEN_ARCHITECTURE, torch_dtype="auto", device_map="balanced", max_memory={0: "8GB", 1: "8GB", 2: "8GB", 3: "8GB"} ,cache_dir="./model_cache/")
             # self.models = {0:self.model, 1:self.model2, 2: self.model3, 3:self.model4}
             self.models = {0:self.model, 1:self.model2}
 
         else:
-            self.model = AutoModelForCausalLM.from_pretrained("Qwen/CodeQwen1.5-7B-Chat", torch_dtype="auto", device_map="balanced", cache_dir="./model_cache/" , max_memory={0: "15GB", 1: "15GB"})
+            self.model = AutoModelForCausalLM.from_pretrained(CODEQWEN_ARCHITECTURE, torch_dtype="auto", device_map="cuda:0", cache_dir="./model_cache/" , max_memory={0: "15GB", 1: "15GB"})
 
     def _multi_model_prompt(self, message, clean=True, show=False):
         model = None
