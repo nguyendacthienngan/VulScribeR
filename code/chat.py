@@ -8,9 +8,10 @@ from typing import List, Callable
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
-device = "cuda:0" if torch.cuda.is_available() else "cpu"  # Explicitly select GPU 0
-CODEQWEN_ARCHITECTURE = "Qwen/CodeQwen1.5-7B"
 
+device = "cuda:0" if torch.cuda.is_available() else "cpu"  # Explicitly select GPU 0
+CODEQWEN_ARCHITECTURE = "Qwen/Qwen2.5-Coder-1.5B"
+# CODEQWEN_ARCHITECTURE = "Qwen/CodeQwen1.5-7B"
 place_holders = {1: "$MY_UNIQUE_PLACE_HOLDER_1", 2: "$MY_UNIQUE_PLACE_HOLDER_2",
                  3: "$MY_UNIQUE_PLACE_HOLDER_3", 4: "$MY_UNIQUE_PLACE_HOLDER_4", 5: "$MY_UNIQUE_PLACE_HOLDER_5"}
 
@@ -69,20 +70,20 @@ Code Snippet BB: "$MY_UNIQUE_PLACE_HOLDER_2"
 Put the generated code inside ```C ``` and note that the final result should a function that takes all the input args of BB and more if required. (Do not include comments)
 """, "ext_wl":
 """Here's two code snippets AA and BB, each including a function. Add some parts of the logic of AA to BB in a way that the result would include important lines of BB with some parts from AA. You can add variables to BB to produce a more correct code.
-                  
+
 Code Snippet AA: "$MY_UNIQUE_PLACE_HOLDER_1"
 
 Code Snippet BB: "$MY_UNIQUE_PLACE_HOLDER_2"
-                  
+
 The following lines from BB are important and should be included in the final result, the rest may be changed or even removed if they have no relation to these lines: (Lines are separated via /~/)
 
 "$MY_UNIQUE_PLACE_HOLDER_3"
 
 Put the generated code inside ```C ``` and note that the final result should a function that takes all the input args of BB and more if required. (Do not include comments)
 """, "mutation_naive": """Here's a code snippets including a function. Except for the important lines mentioned below and the function's name and input variables, mutate the rest of the code so it is different from the original while keeping the original semantics.
-                  
+
 Code Snippet: "$MY_UNIQUE_PLACE_HOLDER_1"
-                  
+
 The following lines are important and should be included in the final result, the rest may be changed or even removed if they have no relation to these lines: (Lines are separated via /~/)
 
 "$MY_UNIQUE_PLACE_HOLDER_2"
@@ -109,7 +110,7 @@ Rules: 1-> Replace the local variables’ identifiers with new non-repeated iden
 16-> Transform the ‘‘Switch-Case’’ statement into the corresponding ‘‘If-Else’’ statement.
 
 Code Snippet: "$MY_UNIQUE_PLACE_HOLDER_1"
-                  
+
 The following lines are important and should be included in the final result, but they can still be changed using only the first 5 rules, the rest may be changed using any of the rules or can even be removed if they have no relation to these lines: (Lines are separated via /~/)
 
 "$MY_UNIQUE_PLACE_HOLDER_2"
@@ -146,7 +147,7 @@ class CodeQwenPrompter:
         with self.lock:
             model = self.models[self.selector % len(self.models)]
             self.selector += 1
-            
+
                 # print(t)
         if self.messages == None or clean:
             self.messages = [
@@ -155,13 +156,16 @@ class CodeQwenPrompter:
             ]
 
         self.messages.append({"role": "user", "content": message})
-        
+
         text = self.tokenizer.apply_chat_template(
             self.messages,
             tokenize=False,
             add_generation_prompt=True
+            # ,template="{role}: {content}\n"
         )
+
         model_inputs = self.tokenizer([text], return_tensors="pt").to(device)
+        print(self.tokenizer.decode(text[0]))
 
         generated_ids = model.generate(
             model_inputs.input_ids,
@@ -191,7 +195,7 @@ class CodeQwenPrompter:
             ]
 
         self.messages.append({"role": "user", "content": message})
-        
+
         text = self.tokenizer.apply_chat_template(
             self.messages,
             tokenize=False,
@@ -199,9 +203,15 @@ class CodeQwenPrompter:
         )
         model_inputs = self.tokenizer([text], return_tensors="pt").to(device)
 
+        # Ensure pad_token_id is set correctly
+        # if self.tokenizer.pad_token_id is None:
+        #     self.tokenizer.pad_token = self.tokenizer.eos_token  # Set pad token to eos token
+
         generated_ids = self.model.generate(
-            model_inputs.input_ids,
-            max_new_tokens=4096 # ChatGPT defaults to 4096
+            input_ids=model_inputs.input_ids,
+            attention_mask=model_inputs.attention_mask,
+            pad_token_id=self.tokenizer.pad_token_id,
+            max_new_tokens=512 # ChatGPT defaults to 4096
         )
         generated_ids = [
             output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
@@ -215,37 +225,6 @@ class CodeQwenPrompter:
             print(reply)
 
         return reply
-
-# class ChatGPTPrompter:
-    # def __init__(self, api_key, system_message="Hi ChatGPT, You are a helpful assistant!") -> None:
-    #     openai.api_key = api_key
-    #     self.messages = None
-    #     self.system_message = system_message
-
-    # # clean initially, it is always dirty after use
-    # def prompt(self, message, clean=True, show=False, t=0.5):
-    #     # print(t)
-    #     if self.messages == None or clean:
-    #         self.messages = [
-    #             # system message to set the behavior of the assistant
-    #             {"role": "system", "content": self.system_message},
-    #         ]
-    #         chat_completion = openai.ChatCompletion.create(
-    #             model="gpt-3.5-turbo", messages=self.messages, temperature=t)
-    #         reply = chat_completion["choices"][0]["message"]["content"]
-    #         self.messages.append({"role": "assistant", "content": reply})
-
-    #     self.messages.append({"role": "user", "content": message})
-    #     chat_completion = openai.ChatCompletion.create(
-    #         model="gpt-3.5-turbo", messages=self.messages)
-    #     reply = chat_completion["choices"][0]["message"]["content"]
-    #     self.messages.append({"role": "assistant", "content": reply})
-
-    #     if show:
-    #         print(reply)
-
-    #     return reply
-
 
 class PromptUtils:
     @staticmethod
@@ -344,7 +323,7 @@ class ConcurrencyUtils:
                                 lock, llm, retry=2) -> None:
         if retry <= 0:
             return
-        
+
         try:
             prompt = prompt_creator_from_searchItem(search_item)
             code = PromptUtils.extract_code_content(llm.prompt(prompt))
@@ -414,7 +393,7 @@ class ConcurrencyUtils:
                 vuls.append(str(row["vul"]))
                 vul_lines.append(str(row["vul_lines"]))
                 cleans.append(str(row["clean"]))
-        
+
             max_indx = -1
             for idx in indices:
                 list_indx = next((j for j, result in enumerate(search_results) if result.best == idx), None)
@@ -439,7 +418,7 @@ class ConcurrencyUtils:
             end = target
 
             while len(generated) < target:
-                
+
                 if is_all:
                     break
 
